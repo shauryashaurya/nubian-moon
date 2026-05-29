@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+// import type { CSSProperties } from 'react';
 
 export type LayoutDirection = 'horizontal-ltr' | 'horizontal-rtl' | 'vertical-rl' | 'vertical-lr';
 
