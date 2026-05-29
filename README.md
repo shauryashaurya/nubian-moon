@@ -1,5 +1,12 @@
-# A Nubian Moon
-
+# A Nubian Moon  
+   
+    
+<html>
+	<br/> <br/>  
+	<img src="./src/assets/banner-large.png" width="95%" align="center" alt="A Nubian Moon © Shaurya Agarwal, 2026" />            
+</html>    
+      
+    
 English to Egyptian Heiroglyphics.     
 An interesting exercise in layouts, fonts, and text manipulation  
   
