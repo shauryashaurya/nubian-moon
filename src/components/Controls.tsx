@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, forwardRef } from 'react';
+import { useState, type ChangeEvent, type Ref } from 'react';
 import type { AppState, FontOption, LayoutDirection, RenderMode, ScriptFamily, StyleConfig } from '../types';
 import { PRESETS, PRESET_NAMES } from '../lib/presets';
 import {
@@ -36,6 +36,7 @@ const SCRIPT_FAMILY_OPTIONS: Array<{ value: ScriptFamily; label: string }> = [
   { value: 'ugaritic', label: 'Ugaritic alphabet' },
 ];
 
+// React 19 accepts `ref` as a plain prop. forwardRef is deprecated.
 interface Props {
   state: AppState;
   onChange: (next: Partial<AppState>) => void;
@@ -44,20 +45,19 @@ interface Props {
   onSelectFont: (family: string) => void;
   onLoadFont: (font: FontOption) => Promise<void>;
   onAddCustomFont: (family: string, url: string) => Promise<void>;
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
-const Controls = forwardRef<HTMLTextAreaElement, Props>(function Controls(
-  {
-    state,
-    onChange,
-    onRender,
-    fonts,
-    onSelectFont,
-    onLoadFont,
-    onAddCustomFont,
-  },
-  textareaRef
-) {
+export default function Controls({
+  state,
+  onChange,
+  onRender,
+  fonts,
+  onSelectFont,
+  onLoadFont,
+  onAddCustomFont,
+  ref: textareaRef,
+}: Props) {
   const limit = computeLimit(state.scriptFamily, state.mode, state.cartouche);
   const remaining = limit - state.inputText.length;
 
@@ -91,8 +91,6 @@ const Controls = forwardRef<HTMLTextAreaElement, Props>(function Controls(
   }
 
   function onScriptFamilyChange(next: ScriptFamily) {
-    // Reset hasRendered so the panel clears when script changes.
-    // Also clamp layout and cartouche to what the new script allows.
     const patch: Partial<AppState> = { scriptFamily: next, hasRendered: false };
     if (!isLayoutAllowed(next, state.layout)) {
       patch.layout = defaultLayout(next);
@@ -421,11 +419,8 @@ const Controls = forwardRef<HTMLTextAreaElement, Props>(function Controls(
       </section>
     </aside>
   );
-});
+}
 
-export default Controls;
-
-// Length cap depends on script family, mode, and cartouche.
 function computeLimit(family: ScriptFamily, mode: RenderMode, cartouche: boolean): number {
   const isCuneiform = ['sumerian', 'akkadian', 'hittite', 'elamite', 'old-persian', 'ugaritic'].includes(family);
   if (isCuneiform) {

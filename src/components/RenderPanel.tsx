@@ -1,8 +1,9 @@
-import { forwardRef, type CSSProperties } from 'react';
+import { type CSSProperties, type Ref } from 'react';
 import type { LayoutDirection, RenderMode, ScriptFamily, StyleConfig } from '../types';
 import type { Group, Quadrat } from '../lib/mdc';
 import type { CuneiformToken } from '../lib/cuneiform';
 
+// React 19 accepts `ref` as a plain prop. forwardRef is deprecated.
 interface Props {
   scriptFamily: ScriptFamily;
   mode: RenderMode;
@@ -12,6 +13,7 @@ interface Props {
   cartouche: boolean;
   layout: LayoutDirection;
   style: StyleConfig;
+  ref?: Ref<HTMLDivElement>;
 }
 
 function layoutToCss(layout: LayoutDirection): CSSProperties {
@@ -25,8 +27,6 @@ function layoutToCss(layout: LayoutDirection): CSSProperties {
     case 'vertical-lr':
       return { writingMode: 'vertical-lr' };
     case 'archaic-sumerian':
-      // Container flows in vertical-rl columns; individual glyphs get
-      // rotated 90 CCW via the .archaic-glyph class on each sign span.
       return { writingMode: 'vertical-rl' };
   }
 }
@@ -108,10 +108,17 @@ function QuadratView({
   );
 }
 
-const RenderPanel = forwardRef<HTMLDivElement, Props>(function RenderPanel(
-  { scriptFamily, mode, text, groups, cuneiTokens, cartouche, layout, style },
-  ref
-) {
+export default function RenderPanel({
+  scriptFamily,
+  mode,
+  text,
+  groups,
+  cuneiTokens,
+  cartouche,
+  layout,
+  style,
+  ref,
+}: Props) {
   const isVertical = layout.startsWith('vertical') || layout === 'archaic-sumerian';
   const isArchaic = layout === 'archaic-sumerian';
   const isHiero = scriptFamily === 'hieroglyphs';
@@ -185,6 +192,4 @@ const RenderPanel = forwardRef<HTMLDivElement, Props>(function RenderPanel(
       )}
     </div>
   );
-});
-
-export default RenderPanel;
+}
