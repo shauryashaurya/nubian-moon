@@ -1,11 +1,16 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-// import './index.css'
-import './styles.css'
-import App from './App.tsx'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import '@fontsource/noto-sans-egyptian-hieroglyphs/400.css';
+import '@fontsource/noto-sans-cuneiform/400.css';
+import '@fontsource/noto-sans-old-persian/400.css';
+import '@fontsource/noto-sans-ugaritic/400.css';
+import '@fontsource/cinzel/400.css';
+import '@fontsource/cinzel/600.css';
+import './styles.css';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
     <App />
-  </StrictMode>,
-)
+  </React.StrictMode>
+);

@@ -1,441 +1,335 @@
-// Manuel de Codage (MdC) Translation Pipeline
+// Manuel de Codage (MdC) inspired pipeline, v2.
+//
+// Pipeline overview:
+//
+//   English input
+//     |
+//     v
+//   Tokenizer (detects '|' quadrat splits, words)
+//     |
+//     v
+//   Transliteration (digraphs -> Egyptian phonemes, l -> r)
+//     |
+//     v
+//   Greedy sign matcher (tri -> bi -> uni)
+//     |
+//     v
+//   Determinative appender (per word)
+//     |
+//     v
+//   Quadrat layout
+//
+// Alternative input path: real MdC notation.
+//   If the input contains any MdC operator ('-', ':', '*', '!'),
+//   the entire input is parsed as raw MdC and the English pipeline
+//   is skipped. Gardiner codes can be plain (N35) or bracketed (<N35>).
+//
+// Literal Gardiner codes can also be embedded in English mode using
+// <CODE> syntax; they are tokenised as single signs.
 
-// 1. Core Sign Mappings (Expanded with common Biliterals, Triliterals, and Determinatives)
-const TRANSLIT_TO_GARDINER: Record<string, string> = {
-	"3": "G1",
-	i: "M17",
-	y: "M17a",
-	a: "D36",
-	w: "G43",
-	b: "D58",
-	p: "Q3",
-	f: "I9",
-	m: "G17",
-	n: "N35",
-	r: "D21",
-	h: "O4",
-	H: "V28",
-	x: "Aa1",
-	X: "F32",
-	s: "S29",
-	z: "O34",
-	S: "N37",
-	q: "N29",
-	k: "V31",
-	g: "W11",
-	t: "X1",
-	T: "V13",
-	d: "D46",
-	D: "I10",
-};
+import {
+  UNILITERAL,
+  BILITERAL_TRANSLIT,
+  BILITERAL_UNICODE,
+  TRILITERAL_TRANSLIT,
+  TRILITERAL_UNICODE,
+  DETERMINATIVE_BY_WORD,
+  DETERMINATIVE_UNICODE,
+  gardinerToUnicode,
+} from './mdcSigns';
 
-const GARDINER_TO_UNICODE: Record<string, string> = {
-	// Uniliterals
-	G1: "\u{1313F}",
-	M17: "\u{131CB}",
-	M17a: "\u{131CC}",
-	D36: "\u{1309D}",
-	G43: "\u{13171}",
-	D58: "\u{130C0}",
-	Q3: "\u{132AA}",
-	I9: "\u{13191}",
-	G17: "\u{13153}",
-	N35: "\u{13216}",
-	D21: "\u{1308B}",
-	O4: "\u{13254}",
-	V28: "\u{1339B}",
-	Aa1: "\u{1340D}",
-	F32: "\u{13121}",
-	S29: "\u{132F4}",
-	O34: "\u{13283}",
-	N37: "\u{13219}",
-	N29: "\u{1320E}",
-	V31: "\u{133A1}",
-	W11: "\u{133BC}",
-	X1: "\u{133CF}",
-	V13: "\u{1337F}",
-	D46: "\u{130A7}",
-	I10: "\u{13193}",
-	// Dictionary Specific Signs (Biliterals, Triliterals, Determinatives)
-	M23: "\u{131F8}", // swt (king)
-	G7: "\u{13145}", // falcon on standard (divine/royal determinative)
-	E13: "\u{130EA}", // cat determinative
-	N5: "\u{131F3}", // sun (Ra)
-	Z1: "\u{133E4}", // stroke
-	S34: "\u{132F9}", // ankh (life)
-	O1: "\u{13250}", // pr (house)
-	O29: "\u{13271}", // aA (column)
-	Y1: "\u{133F2}", // papyrus roll (abstract determinative)
+// Cells inside a quadrat. They can stack (':'), sit side by side ('*'),
+// or simply sequence. Each cell holds one Unicode hieroglyph.
+export interface QuadratCell {
+  sign: string;
+  // Trace metadata populated by the pipeline for the PipelinePanel.
+  translit?: string;   // transliteration value (nfr, S29, etc.)
+  role?: string;       // 'uniliteral', 'biliteral', 'triliteral', 'determinative', 'literal-code', 'digit'
+  gardiner?: string;   // Gardiner code (F35, S29, etc.)
+}
+
+// A quadrat is a small group of signs rendered together. The arrangement
+// hint tells the renderer how to lay them out. 'auto' lets the renderer
+// pick a grid based on the cell count.
+export type Arrangement = 'auto' | 'row' | 'column' | 'grid';
+
+export interface Quadrat {
+  cells: QuadratCell[];
+  arrangement: Arrangement;
+}
+
+export type Group =
+  | { type: 'quadrat'; quadrat: Quadrat }
+  | { type: 'space' }
+  | { type: 'linebreak' };
+
+// English transliteration tables.
+
+// Digraphs map English pairs to Egyptological transliteration tokens.
+// Order matters when prefixes overlap: longest match first.
+const DIGRAPH_TO_TRANSLIT: Array<[string, string]> = [
+  ['sh', 'S'],
+  ['ch', 'S'],
+  ['kh', 'x'],
+  ['th', 't'],
+  ['ph', 'f'],
+  ['gh', 'g'],
+  ['qu', 'qw'],
+  ['ng', 'ng'],
+  ['ck', 'k'],
+  ['wh', 'w'],
+];
+
+// Single English letter -> transliteration. 'l' becomes 'r' since Egyptian
+// had no /l/. Vowels e/i and o/u collapse to the semivowel signs.
+const LETTER_TO_TRANSLIT: Record<string, string> = {
+  'a': '3', 'b': 'b', 'c': 'k', 'd': 'd', 'e': 'i',
+  'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i', 'j': 'D',
+  'k': 'k', 'l': 'r', 'm': 'm', 'n': 'n', 'o': 'w',
+  'p': 'p', 'q': 'q', 'r': 'r', 's': 's', 't': 't',
+  'u': 'w', 'v': 'f', 'w': 'w', 'x': 'x', 'y': 'y',
+  'z': 'z',
 };
 
 const DIGIT_UNICODE: Record<string, string> = {
-	"0": "\u{13361}",
-	"1": "\u{13362}",
-	"2": "\u{13363}",
-	"3": "\u{13364}",
-	"4": "\u{13365}",
-	"5": "\u{13366}",
-	"6": "\u{13367}",
-	"7": "\u{13368}",
-	"8": "\u{13369}",
-	"9": "\u{1336A}",
+  '0': '\u{13361}', '1': '\u{13362}', '2': '\u{13363}', '3': '\u{13364}',
+  '4': '\u{13365}', '5': '\u{13366}', '6': '\u{13367}', '7': '\u{13368}',
+  '8': '\u{13369}', '9': '\u{1336A}',
 };
 
-// 2. English Heuristics
-const DIGRAPH_TO_TRANSLIT: Array<[string, string]> = [
-	["sh", "S"],
-	["ch", "S"],
-	["kh", "x"],
-	["th", "t"],
-	["ph", "f"],
-	["gh", "g"],
-	["qu", "qw"],
-	["ng", "ng"],
-	["ck", "k"],
-	["wh", "w"],
-	["tj", "T"],
-	["dj", "D"],
-];
-
-const LETTER_TO_TRANSLIT: Record<string, string> = {
-	a: "3",
-	b: "b",
-	c: "k",
-	d: "d",
-	e: "i",
-	f: "f",
-	g: "g",
-	h: "h",
-	i: "i",
-	j: "D",
-	k: "k",
-	l: "r",
-	m: "m",
-	n: "n",
-	o: "w",
-	p: "p",
-	q: "q",
-	r: "r",
-	s: "s",
-	t: "t",
-	u: "w",
-	v: "f",
-	w: "w",
-	x: "x",
-	y: "y",
-	z: "z",
-};
-
-// 3. Real Egyptian Translation Dictionary
-// Uses MdC operators: ':' stacks vertically, '*' places side-by-side
-const DICTIONARY: Record<string, { translit: string; mdc: string }> = {
-	king: { translit: "nsw", mdc: "M23:X1*G7" },
-	cat: { translit: "mjw", mdc: "G17:M17*G43:E13" },
-	sun: { translit: "ra", mdc: "D21:D36*N5:Z1" }, // Ra
-	life: { translit: "anx", mdc: "S34" },
-	pharaoh: { translit: "pr-aA", mdc: "O1:D36*O29:Y1" },
-};
-
-// 4. Data Structures
-export interface Quadrat {
-	rows: string[][]; // Outer array = stacked vertically, Inner array = placed horizontally
-}
-
-export type Group = { type: "quadrat"; quadrat: Quadrat } | { type: "space" };
-
-export interface PipelineTrace {
-	english: string;
-	translit: string;
-	gardiner: string;
-	isDictMatch: boolean;
-	finalSigns: string;
-}
-
-export interface MdCResult {
-	groups: Group[];
-	trace: PipelineTrace[];
-}
-
+// Step 1: English chunk -> transliteration string.
 function englishToTranslit(s: string): string {
-	const lower = s.toLowerCase();
-	let out = "";
-	let i = 0;
-	while (i < lower.length) {
-		const pair = lower.slice(i, i + 2);
-		const dg = DIGRAPH_TO_TRANSLIT.find(([k]) => k === pair);
-		if (dg) {
-			out += dg[1];
-			i += 2;
-			continue;
-		}
-		const ch = lower[i];
-		if (DIGIT_UNICODE[ch]) {
-			out += ch;
-		} else if (LETTER_TO_TRANSLIT[ch]) {
-			out += LETTER_TO_TRANSLIT[ch];
-		}
-		i += 1;
-	}
-	return out;
+  const lower = s.toLowerCase();
+  let out = '';
+  let i = 0;
+  while (i < lower.length) {
+    const pair = lower.slice(i, i + 2);
+    const dg = DIGRAPH_TO_TRANSLIT.find(([k]) => k === pair);
+    if (dg) {
+      out += dg[1];
+      i += 2;
+      continue;
+    }
+    const ch = lower[i];
+    if (DIGIT_UNICODE[ch]) {
+      out += ch;
+    } else if (LETTER_TO_TRANSLIT[ch]) {
+      out += LETTER_TO_TRANSLIT[ch];
+    }
+    i += 1;
+  }
+  return out;
 }
 
-// 5. Parsers
-function parseMdCString(mdc: string): Quadrat {
-	const rowStrs = mdc.split(":"); // Split vertically
-	const rows = rowStrs.map((r) => {
-		const signs = r.split("*"); // Split horizontally
-		return signs.map((s) => GARDINER_TO_UNICODE[s] || "");
-	});
-	return { rows };
+// Step 2: Greedy multi-letter sign matcher on the transliteration string.
+// Returns richer cells with translit/role/gardiner for the pipeline panel.
+function translitToCells(t: string): QuadratCell[] {
+  const cells: QuadratCell[] = [];
+  let i = 0;
+  while (i < t.length) {
+    if (DIGIT_UNICODE[t[i]]) {
+      cells.push({ sign: DIGIT_UNICODE[t[i]], translit: t[i], role: 'digit' });
+      i += 1;
+      continue;
+    }
+    const tri = t.slice(i, i + 3);
+    if (tri.length === 3 && TRILITERAL_TRANSLIT[tri]) {
+      const code = TRILITERAL_TRANSLIT[tri];
+      const u = gardinerToUnicode(code);
+      if (u) {
+        cells.push({ sign: u, translit: tri, role: 'triliteral', gardiner: code });
+        i += 3;
+        continue;
+      }
+    }
+    const bi = t.slice(i, i + 2);
+    if (bi.length === 2 && BILITERAL_TRANSLIT[bi]) {
+      const code = BILITERAL_TRANSLIT[bi];
+      const u = gardinerToUnicode(code);
+      if (u) {
+        cells.push({ sign: u, translit: bi, role: 'biliteral', gardiner: code });
+        i += 2;
+        continue;
+      }
+    }
+    const ch = t[i];
+    const uniCode = findUniByValue(ch);
+    if (uniCode) {
+      const u = gardinerToUnicode(uniCode);
+      if (u) cells.push({ sign: u, translit: ch, role: 'uniliteral', gardiner: uniCode });
+    }
+    i += 1;
+  }
+  return cells;
 }
 
-function heuristicToQuadrat(translit: string): Quadrat {
-	const signs = translit
-		.split("")
-		.map((ch) => {
-			if (DIGIT_UNICODE[ch]) return DIGIT_UNICODE[ch];
-			const code = TRANSLIT_TO_GARDINER[ch];
-			return code ? GARDINER_TO_UNICODE[code] || "" : "";
-		})
-		.filter(Boolean);
-
-	// Group into pairs of 2 to mimic natural historical stacking
-	const rows: string[][] = [];
-	for (let i = 0; i < signs.length; i += 2) {
-		rows.push(signs.slice(i, i + 2));
-	}
-	return { rows };
+function findUniByValue(ch: string): string | null {
+  for (const code in UNILITERAL) {
+    if (transliterationValueOf(code) === ch) return code;
+  }
+  return null;
 }
 
-export function renderMdC(text: string): MdCResult {
-	if (!text) return { groups: [], trace: [] };
-
-	const groups: Group[] = [];
-	const trace: PipelineTrace[] = [];
-	const words = text.split(/\s+/).filter((w) => w.length > 0);
-
-	words.forEach((word, idx) => {
-		if (idx > 0) groups.push({ type: "space" });
-
-		const lowerWord = word.toLowerCase();
-
-		// Check True Dictionary Match first
-		if (DICTIONARY[lowerWord]) {
-			const entry = DICTIONARY[lowerWord];
-			const quadrat = parseMdCString(entry.mdc);
-			groups.push({ type: "quadrat", quadrat });
-			trace.push({
-				english: word,
-				translit: entry.translit,
-				gardiner: entry.mdc,
-				isDictMatch: true,
-				finalSigns: quadrat.rows.flat().join(" "),
-			});
-			return;
-		}
-
-		// Fallback: Phonetic Heuristic with custom '|' grouping
-		const chunks = word.split("|").filter((c) => c.length > 0);
-		chunks.forEach((chunk) => {
-			const translit = englishToTranslit(chunk);
-			const gardinerArr = translit
-				.split("")
-				.map((ch) => TRANSLIT_TO_GARDINER[ch])
-				.filter(Boolean);
-			const quadrat = heuristicToQuadrat(translit);
-
-			if (quadrat.rows.length > 0) {
-				groups.push({ type: "quadrat", quadrat });
-				trace.push({
-					english: chunk,
-					translit: translit,
-					gardiner: gardinerArr.join("*"), // Pseudo-MdC for display
-					isDictMatch: false,
-					finalSigns: quadrat.rows.flat().join(" "),
-				});
-			}
-		});
-	});
-
-	return { groups, trace };
+// Helper: map a uniliteral Gardiner code back to its translit symbol.
+// This stays in sync with the table in mdcSigns.ts.
+const UNI_VALUE: Record<string, string> = {
+  'G1': '3', 'M17': 'i', 'M17a': 'y', 'D36': 'a', 'G43': 'w', 'D58': 'b',
+  'Q3': 'p', 'I9': 'f', 'G17': 'm', 'N35': 'n', 'D21': 'r', 'O4': 'h',
+  'V28': 'H', 'Aa1': 'x', 'F32': 'X', 'S29': 's', 'O34': 'z', 'N37': 'S',
+  'N29': 'q', 'V31': 'k', 'W11': 'g', 'X1': 't', 'V13': 'T', 'D46': 'd',
+  'I10': 'D',
+};
+function transliterationValueOf(code: string): string {
+  return UNI_VALUE[code] || '';
 }
 
-// OLD VERSION (DEFUNCT)
-// // Manuel de Codage (MdC) inspired pipeline.
-// //
-// // Pipeline stages:
-// //   1. English text -> Egyptian transliteration (digraph-aware heuristic).
-// //      Egyptian had no /l/ phoneme; we substitute 'r' (a common practice
-// //      for foreign names in Egyptological writing).
-// //   2. Transliteration -> Gardiner sign code (uniliteral signs only).
-// //   3. Gardiner code -> Unicode codepoint in the U+13000..U+1342F block.
-// //   4. Quadrats: the user can split a word with '|' to mark sign-group
-// //      boundaries. Each chunk becomes one visually-grouped quadrat at
-// //      render time.
-// //
-// // This is intentionally a small subset of the full MdC specification.
-// // Future work: full MdC operator parser ('-', ':', '*', '!'), determinatives,
-// // biliteral/triliteral lookups, and constraint-based quadrat packing.
+// Inline Gardiner literal: <CODE> in input.
+const INLINE_CODE_RE = /<([A-Za-z]{1,3}\d+[a-z]?)>/;
 
-// // Standard Egyptological transliteration -> Gardiner uniliteral sign code.
-// // Symbols use ASCII proxies common in MdC tooling:
-// //   '3' = aleph, 'a' = ayin, 'H' = h-dot, 'x' = kh, 'X' = h-bar, 'S' = sh,
-// //   'T' = tj, 'D' = dj.
-// const TRANSLIT_TO_GARDINER: Record<string, string> = {
-//   '3': 'G1',
-//   'i': 'M17',
-//   'y': 'M17a',
-//   'a': 'D36',
-//   'w': 'G43',
-//   'b': 'D58',
-//   'p': 'Q3',
-//   'f': 'I9',
-//   'm': 'G17',
-//   'n': 'N35',
-//   'r': 'D21',
-//   'h': 'O4',
-//   'H': 'V28',
-//   'x': 'Aa1',
-//   'X': 'F32',
-//   's': 'S29',
-//   'z': 'O34',
-//   'S': 'N37',
-//   'q': 'N29',
-//   'k': 'V31',
-//   'g': 'W11',
-//   't': 'X1',
-//   'T': 'V13',
-//   'd': 'D46',
-//   'D': 'I10',
-// };
+// Tokenise a single English chunk (post-pipe-split). Splits on inline
+// <CODE> tags so they pass through untouched while the surrounding letters
+// run through the transliteration pipeline. Returns cells with trace info.
+function chunkToCells(chunk: string): QuadratCell[] {
+  const cells: QuadratCell[] = [];
+  let rest = chunk;
+  while (rest.length > 0) {
+    const m = rest.match(INLINE_CODE_RE);
+    if (!m || m.index === undefined) {
+      cells.push(...translitToCells(englishToTranslit(rest)));
+      break;
+    }
+    const before = rest.slice(0, m.index);
+    if (before) cells.push(...translitToCells(englishToTranslit(before)));
+    const u = gardinerToUnicode(m[1]);
+    if (u) cells.push({ sign: u, translit: m[1], role: 'literal-code', gardiner: m[1] });
+    rest = rest.slice(m.index + m[0].length);
+  }
+  return cells;
+}
 
-// // Gardiner sign code -> Unicode hieroglyph codepoint.
-// const GARDINER_TO_UNICODE: Record<string, string> = {
-//   'G1': '\u{1313F}',
-//   'M17': '\u{131CB}',
-//   'M17a': '\u{131CC}',
-//   'D36': '\u{1309D}',
-//   'G43': '\u{13171}',
-//   'D58': '\u{130C0}',
-//   'Q3': '\u{132AA}',
-//   'I9': '\u{13191}',
-//   'G17': '\u{13153}',
-//   'N35': '\u{13216}',
-//   'D21': '\u{1308B}',
-//   'O4': '\u{13254}',
-//   'V28': '\u{1339B}',
-//   'Aa1': '\u{1340D}',
-//   'F32': '\u{13121}',
-//   'S29': '\u{132F4}',
-//   'O34': '\u{13283}',
-//   'N37': '\u{13219}',
-//   'N29': '\u{1320E}',
-//   'V31': '\u{133A1}',
-//   'W11': '\u{133BC}',
-//   'X1': '\u{133CF}',
-//   'V13': '\u{1337F}',
-//   'D46': '\u{130A7}',
-//   'I10': '\u{13193}',
-// };
+// MdC operator detection. Any of these in the input flips parsing to raw.
+const MDC_OPS = /[-:*!]/;
+function looksLikeMdC(input: string): boolean {
+  return MDC_OPS.test(input);
+}
 
-// const DIGIT_UNICODE: Record<string, string> = {
-//   '0': '\u{13361}', '1': '\u{13362}', '2': '\u{13363}', '3': '\u{13364}',
-//   '4': '\u{13365}', '5': '\u{13366}', '6': '\u{13367}', '7': '\u{13368}',
-//   '8': '\u{13369}', '9': '\u{1336A}',
-// };
+// Raw MdC parser.
+//
+// Accepts a string of Gardiner codes separated by:
+//   '-'   sequence (next quadrat)
+//   ':'   stack vertically inside current quadrat
+//   '*'   place side by side inside current quadrat
+//   '!'   line break
+//   ' '   word separator
+//
+// Codes can be written plain (N35) or in angle brackets (<N35>).
+// Unknown codes are silently dropped.
+function parseMdC(input: string): Group[] {
+  const out: Group[] = [];
+  // word splitting first, MdC handles operators within a word
+  const words = input.split(/\s+/).filter(w => w.length > 0);
+  words.forEach((word, wi) => {
+    if (wi > 0) out.push({ type: 'space' });
+    // line break operator '!' splits at the top level
+    const lines = word.split('!');
+    lines.forEach((line, li) => {
+      if (li > 0) out.push({ type: 'linebreak' });
+      // sequence operator '-' separates quadrats
+      const quadratStrs = line.split('-').filter(s => s.length > 0);
+      for (const qs of quadratStrs) {
+        const q = parseQuadrat(qs);
+        if (q.cells.length > 0) {
+          out.push({ type: 'quadrat', quadrat: q });
+        }
+      }
+    });
+  });
+  return out;
+}
 
-// // English digraphs -> transliteration tokens.
-// // Order matters when overlapping digraphs share a prefix; longest first.
-// const DIGRAPH_TO_TRANSLIT: Array<[string, string]> = [
-//   ['sh', 'S'],
-//   ['ch', 'S'],
-//   ['kh', 'x'],
-//   ['th', 't'],
-//   ['ph', 'f'],
-//   ['gh', 'g'],
-//   ['qu', 'qw'],
-//   ['ng', 'ng'],
-//   ['ck', 'k'],
-//   ['wh', 'w'],
-//   ['tj', 'T'], // ADDED tj mapping
-//   ['dj', 'D'], // ADDED dj mapping
-// ];
+// Parse one quadrat string. Operators ':' and '*' are mixed via a simple
+// rule: if both appear, layout is 'grid'; if only ':', 'column'; if only
+// '*', 'row'; if neither, single-cell.
+function parseQuadrat(qs: string): Quadrat {
+  const hasStack = qs.includes(':');
+  const hasSide = qs.includes('*');
+  const arrangement: Arrangement = hasStack && hasSide
+    ? 'grid'
+    : hasStack
+      ? 'column'
+      : hasSide
+        ? 'row'
+        : 'auto';
+  const parts = qs.split(/[:*]/).filter(s => s.length > 0);
+  const cells: QuadratCell[] = [];
+  for (const p of parts) {
+    const clean = p.replace(/[<>]/g, '');
+    const u = gardinerToUnicode(clean);
+    if (u) cells.push({ sign: u, translit: clean, role: 'literal-code', gardiner: clean });
+  }
+  return { cells, arrangement };
+}
 
-// // Single English letter -> transliteration token.
-// const LETTER_TO_TRANSLIT: Record<string, string> = {
-//   'a': '3', 'b': 'b', 'c': 'k', 'd': 'd', 'e': 'i',
-//   'f': 'f', 'g': 'g', 'h': 'h', 'i': 'i', 'j': 'D',
-//   'k': 'k', 'l': 'r', 'm': 'm', 'n': 'n', 'o': 'w',
-//   'p': 'p', 'q': 'q', 'r': 'r', 's': 's', 't': 't',
-//   'u': 'w', 'v': 'f', 'w': 'w', 'x': 'x', 'y': 'y',
-//   'z': 'z',
-// };
+// English pipeline entry. Splits on whitespace into words, then on '|' into
+// quadrats. Each quadrat goes through transliteration and greedy matching.
+// Determinative is appended once per word, after the last quadrat of the word.
+function parseEnglish(input: string): Group[] {
+  const out: Group[] = [];
+  const words = input.split(/\s+/).filter(w => w.length > 0);
+  words.forEach((word, wi) => {
+    if (wi > 0) out.push({ type: 'space' });
+    const chunks = word.split('|').filter(c => c.length > 0);
+    chunks.forEach(chunk => {
+      const cells = chunkToCells(chunk);
+      if (cells.length > 0) {
+        out.push({ type: 'quadrat', quadrat: { cells, arrangement: 'auto' } });
+      }
+    });
+    // Append determinative after the final phonetic content of the word.
+    const wordForDet = word.replace(/<[^>]+>/g, '').replace(/\|/g, '').toLowerCase();
+    const detCode = DETERMINATIVE_BY_WORD[wordForDet];
+    if (detCode) {
+      const det = gardinerToUnicode(detCode);
+      if (det) {
+        out.push({
+          type: 'quadrat',
+          quadrat: {
+            cells: [{ sign: det, translit: wordForDet, role: 'determinative', gardiner: detCode }],
+            arrangement: 'auto',
+          },
+        });
+      }
+    }
+  });
+  return out;
+}
 
-// export interface Quadrat {
-//   signs: string[];
-// }
+// Main entry: pick the path based on the input.
+export function renderMdC(text: string): Group[] {
+  if (!text) return [];
+  if (looksLikeMdC(text)) return parseMdC(text);
+  return parseEnglish(text);
+}
 
-// export type Group =
-//   | { type: 'quadrat'; quadrat: Quadrat }
-//   | { type: 'space' };
+// Re-export commonly used items so the renderer/UI can avoid a second import.
+export { UNILITERAL, BILITERAL_UNICODE, TRILITERAL_UNICODE, DETERMINATIVE_UNICODE };
 
-// // English chunk -> transliteration string.
-// function englishToTranslit(s: string): string {
-//   const lower = s.toLowerCase();
-//   let out = '';
-//   let i = 0;
-//   while (i < lower.length) {
-//     const pair = lower.slice(i, i + 2);
-//     const dg = DIGRAPH_TO_TRANSLIT.find(([k]) => k === pair);
-//     if (dg) {
-//       out += dg[1];
-//       i += 2;
-//       continue;
-//     }
-//     const ch = lower[i];
-//     if (DIGIT_UNICODE[ch]) {
-//       out += ch;
-//     } else if (LETTER_TO_TRANSLIT[ch]) {
-//       out += LETTER_TO_TRANSLIT[ch];
-//     }
-//     i += 1;
-//   }
-//   return out;
-// }
+// Flatten Group[] into a linear PipelineStep list for the pipeline panel.
+import type { PipelineStep } from '../types';
 
-// // Transliteration string -> Unicode hieroglyph signs (one per token).
-// function translitToSigns(t: string): string[] {
-//   const signs: string[] = [];
-//   for (const ch of t) {
-//     if (DIGIT_UNICODE[ch]) {
-//       signs.push(DIGIT_UNICODE[ch]);
-//       continue;
-//     }
-//     const code = TRANSLIT_TO_GARDINER[ch];
-//     if (code) {
-//       const u = GARDINER_TO_UNICODE[code];
-//       if (u) signs.push(u);
-//     }
-//   }
-//   return signs;
-// }
-
-// // Full pipeline: text with optional pipe-separated syllables -> Group[].
-// // Each whitespace-separated word breaks into chunks on '|'; each chunk
-// // renders as one quadrat. Words are separated by a 'space' group.
-// export function renderMdC(text: string): Group[] {
-//   if (!text) return [];
-//   const out: Group[] = [];
-//   const words = text.split(/\s+/).filter(w => w.length > 0);
-//   words.forEach((word, idx) => {
-//     if (idx > 0) out.push({ type: 'space' });
-//     const chunks = word.split('|').filter(c => c.length > 0);
-//     chunks.forEach(chunk => {
-//       const signs = translitToSigns(englishToTranslit(chunk));
-//       if (signs.length > 0) {
-//         out.push({ type: 'quadrat', quadrat: { signs } });
-//       }
-//     });
-//   });
-//   return out;
-// }
+export function tracePipelineFromGroups(groups: Group[]): PipelineStep[] {
+  const steps: PipelineStep[] = [];
+  for (const g of groups) {
+    if (g.type === 'space') { steps.push({ input: ' ', glyph: ' ', role: 'space' }); continue; }
+    if (g.type === 'linebreak') { steps.push({ input: '!', glyph: '', role: 'linebreak' }); continue; }
+    for (const c of g.quadrat.cells) {
+      steps.push({
+        input: c.translit ?? '',
+        glyph: c.sign,
+        role: c.role ?? 'sign',
+        detail: c.gardiner ? `Gardiner ${c.gardiner}` : undefined,
+      });
+    }
+  }
+  return steps;
+}

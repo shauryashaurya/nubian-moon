@@ -48,12 +48,36 @@ body
 
 .banner
 {
-  height: 250px;
-  flex: 0 0 250px;
+  height: 150px;
+  flex: 0 0 150px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background:
+    linear-gradient(180deg, #1c1408 0%, #0e0a05 100%);
+  border-bottom: 1px solid var(--rule);
   position: relative;
+}
+
+.banner::before,
+.banner::after
+{
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+}
+
+.banner::before
+{
+  top: 8px;
+}
+
+.banner::after
+{
+  bottom: 8px;
 }
 
 .banner-placeholder
@@ -783,4 +807,483 @@ body
   grid-template-rows: 1fr 1fr;
   align-items: center;
   justify-items: center;
+}
+
+/* v4 additions: cuneiform styling */
+
+.glyph-cunei
+{
+  display: block;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.cunei-sign
+{
+  display: inline-block;
+}
+
+.cunei-det
+{
+  display: inline-block;
+  font-size: 0.65em;
+  vertical-align: super;
+  opacity: 0.85;
+  margin: 0 0.05em;
+}
+
+.palette-count
+{
+  color: var(--ink-dim);
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0.1em;
+}
+
+/* v5 additions: translation pipeline panel */
+
+.pipeline-panel
+{
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  margin-top: 4px;
+}
+
+.pipeline-head
+{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.pipeline-head h3
+{
+  margin: 0 0 4px;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.pipeline-sub
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.pipeline-input
+{
+  background: var(--bg-panel-2);
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  color: var(--ink);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.pipeline-arrow
+{
+  color: var(--gold-dim);
+}
+
+.pipeline-count
+{
+  color: var(--gold);
+  letter-spacing: 0.1em;
+}
+
+.pipeline-actions
+{
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pipeline-desc
+{
+  font-size: 11px;
+  color: var(--ink-dim);
+  font-style: italic;
+  margin-bottom: 10px;
+}
+
+.pipeline-table
+{
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.pipeline-row
+{
+  display: grid;
+  grid-template-columns: 40px 1fr 60px 130px 1fr;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  align-items: center;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.pipeline-row:last-child
+{
+  border-bottom: 0;
+}
+
+.pipeline-row-header
+{
+  background: var(--bg-panel-2);
+  font-family: 'Cinzel', serif;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold-dim);
+  font-weight: 600;
+}
+
+.col-idx
+{
+  color: var(--ink-dim);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+}
+
+.col-input code
+{
+  background: rgba(212, 166, 74, 0.08);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.col-glyph
+{
+  line-height: 1;
+  color: var(--gold-bright);
+  text-align: center;
+}
+
+.col-role
+{
+  font-size: 11px;
+}
+
+.col-detail
+{
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+
+.role-badge
+{
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-family: 'Cinzel', serif;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  background: rgba(212, 166, 74, 0.05);
+  white-space: nowrap;
+}
+
+.role-badge.role-uniliteral
+{
+  color: #f4c542;
+  border-color: #8a6a2a;
+}
+
+.role-badge.role-biliteral
+{
+  color: #d4a64a;
+  border-color: #7a5a1a;
+}
+
+.role-badge.role-triliteral
+{
+  color: #ffae42;
+  border-color: #7a3a05;
+}
+
+.role-badge.role-determinative
+{
+  color: #b8e0ff;
+  border-color: #2a5a7a;
+  background: rgba(56, 130, 190, 0.08);
+}
+
+.role-badge.role-logogram
+{
+  color: #d4b8ff;
+  border-color: #5a3a7a;
+  background: rgba(140, 90, 190, 0.08);
+}
+
+.role-badge.role-syllabic
+{
+  color: #b8ffcf;
+  border-color: #2a7a4a;
+  background: rgba(80, 190, 130, 0.06);
+}
+
+.role-badge.role-ideogram
+{
+  color: #d4b8ff;
+  border-color: #5a3a7a;
+}
+
+.role-badge.role-number,
+.role-badge.role-digit
+{
+  color: #ffd4a8;
+  border-color: #7a5a2a;
+}
+
+.role-badge.role-space
+{
+  opacity: 0.4;
+}
+
+.role-badge.role-letter
+{
+  color: #f4c542;
+  border-color: #8a6a2a;
+}
+
+.role-badge.role-digraph
+{
+  color: #ffae42;
+  border-color: #7a3a05;
+}
+
+.role-badge.role-literal-code
+{
+  color: #d4b8ff;
+  border-color: #5a3a7a;
+}
+
+.role-badge.role-cv-syllable
+{
+  color: #b8ffcf;
+  border-color: #2a7a4a;
+}
+
+.role-badge.role-cv-fallback
+{
+  color: #b8ffcf;
+  border-color: #2a5a3a;
+  opacity: 0.75;
+}
+
+.role-badge.role-c-implicit-a
+{
+  color: #b8ffcf;
+  border-color: #2a5a3a;
+  opacity: 0.75;
+}
+
+.role-badge.role-vowel
+{
+  color: #ffd4a8;
+  border-color: #7a5a2a;
+}
+
+.role-badge.role-atf-syllable
+{
+  color: #b8ffcf;
+  border-color: #2a7a4a;
+}
+
+.role-badge.role-unknown,
+.role-badge.role-dropped
+{
+  color: #a08878;
+  border-color: #4a2a1a;
+  opacity: 0.6;
+}
+
+.pipeline-compact
+{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-panel-2);
+  border-radius: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.pipeline-chip
+{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.pipeline-chip .chip-in code
+{
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+}
+
+.pipeline-chip .chip-arrow
+{
+  color: var(--gold-dim);
+  font-size: 9px;
+}
+
+.pipeline-chip .chip-glyph
+{
+  color: var(--gold-bright);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pipeline-chip.role-determinative
+{
+  border-color: #2a5a7a;
+}
+
+.pipeline-chip.role-logogram
+{
+  border-color: #5a3a7a;
+}
+
+.pipeline-chip.role-triliteral
+{
+  border-color: #7a3a05;
+}
+
+.pipeline-chip.role-biliteral
+{
+  border-color: #7a5a1a;
+}
+
+.pipeline-chip.role-ideogram
+{
+  border-color: #5a3a7a;
+}
+
+.pipeline-word-gap
+{
+  display: inline-block;
+  width: 12px;
+}
+
+.pipeline-break
+{
+  color: var(--gold-dim);
+}
+
+@media (max-width: 900px)
+{
+  .pipeline-row
+  {
+    grid-template-columns: 30px 1fr 50px 100px;
+  }
+
+  .pipeline-row .col-detail
+  {
+    display: none;
+  }
+
+  .pipeline-row-header .col-detail
+  {
+    display: none;
+  }
+}
+
+/* v6 additions: archaic Sumerian layout, disabled state cues */
+
+/* Archaic Sumerian: each glyph rotated 90 CCW from the classical form.
+   Wrapping element already has writing-mode: vertical-rl so signs stack
+   top-to-bottom in columns that flow right-to-left. */
+.glyph-archaic
+{
+  line-height: 1.8;
+}
+
+.archaic-glyph
+{
+  display: inline-block;
+  transform: rotate(-90deg);
+  transform-origin: center center;
+  /* Give each rotated glyph its own square footprint so neighbouring
+     signs do not overlap horizontally in the vertical column. */
+  width: 1em;
+  height: 1em;
+  text-align: center;
+  vertical-align: middle;
+  margin: 0.1em 0;
+}
+
+.archaic-glyph.cunei-det
+{
+  font-size: 0.65em;
+  opacity: 0.85;
+}
+
+.word-gap-archaic
+{
+  display: block;
+  height: 0.6em;
+}
+
+.switch.switch-disabled
+{
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.switch.switch-disabled input
+{
+  cursor: not-allowed;
+}
+
+.disabled-note
+{
+  color: var(--ink-dim);
+  font-size: 10px;
+  font-style: italic;
+  margin-left: 4px;
+}
+
+.select option:disabled
+{
+  color: var(--ink-dim);
+  font-style: italic;
 }

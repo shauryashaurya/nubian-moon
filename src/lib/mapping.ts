@@ -126,3 +126,63 @@ export function render(text: string, mode: RenderMode): string {
   if (!text) return '';
   return mode === 'literal' ? literalMap(text) : phoneticMap(text);
 }
+
+// Trace variant: emits a PipelineStep for each input token so the UI can
+// display the derivation. Same logic as render() but records each step.
+import type { PipelineStep } from '../types';
+
+export function trace(text: string, mode: RenderMode): PipelineStep[] {
+  if (!text) return [];
+  return mode === 'literal' ? traceLiteral(text) : tracePhonetic(text);
+}
+
+function traceLiteral(text: string): PipelineStep[] {
+  const steps: PipelineStep[] = [];
+  for (const ch of text) {
+    const low = ch.toLowerCase();
+    if (low === ' ') {
+      steps.push({ input: ' ', glyph: ' ', role: 'space' });
+    } else if (low >= 'a' && low <= 'z' && LITERAL[low]) {
+      steps.push({ input: ch, glyph: LITERAL[low], role: 'letter', detail: `Latin ${low} -> uniliteral proxy` });
+    } else if (low >= '0' && low <= '9') {
+      steps.push({ input: ch, glyph: DIGITS[low], role: 'digit', detail: `digit ${low}` });
+    } else {
+      steps.push({ input: ch, glyph: '', role: 'unknown', detail: 'dropped' });
+    }
+  }
+  return steps;
+}
+
+function tracePhonetic(text: string): PipelineStep[] {
+  const steps: PipelineStep[] = [];
+  const lower = text.toLowerCase();
+  let i = 0;
+  while (i < lower.length) {
+    const ch = lower[i];
+    if (ch === ' ') {
+      steps.push({ input: ' ', glyph: ' ', role: 'space' });
+      i += 1;
+      continue;
+    }
+    if (ch >= '0' && ch <= '9') {
+      steps.push({ input: ch, glyph: DIGITS[ch], role: 'digit', detail: `digit ${ch}` });
+      i += 1;
+      continue;
+    }
+    const pair = lower.slice(i, i + 2);
+    const dg = DIGRAPHS.find(([k]) => k === pair);
+    if (dg) {
+      steps.push({ input: text.slice(i, i + 2), glyph: dg[1], role: 'digraph', detail: `${pair} -> phonetic sign` });
+      i += 2;
+      continue;
+    }
+    if (ch >= 'a' && ch <= 'z' && LITERAL[ch]) {
+      steps.push({ input: text[i], glyph: LITERAL[ch], role: 'letter', detail: `Latin ${ch} -> uniliteral` });
+      i += 1;
+      continue;
+    }
+    steps.push({ input: text[i], glyph: '', role: 'unknown', detail: 'dropped' });
+    i += 1;
+  }
+  return steps;
+}

@@ -1,306 +1,293 @@
-import { useCallback, useRef, useState } from "react";
-import Banner from "./components/Banner";
-import Controls from "./components/Controls";
-import RenderPanel from "./components/RenderPanel";
-import { render as renderLiteralOrPhonetic } from "./lib/mapping";
-import { renderMdC, type Group, type PipelineTrace } from "./lib/mdc";
-import { PRESETS } from "./lib/presets";
-import { downloadImage } from "./lib/exportImage";
-import { BUNDLED_FONT, REMOTE_FONTS, loadFont } from "./lib/fontLoader";
-import type { AppState, FontOption } from "./types";
+import { useCallback, useRef, useState } from 'react';
+import Banner from './components/Banner';
+import Controls from './components/Controls';
+import RenderPanel from './components/RenderPanel';
+import SignPalette from './components/SignPalette';
+import PipelinePanel from './components/PipelinePanel';
+import { render as renderLiteralOrPhonetic, trace as traceLiteralOrPhonetic } from './lib/mapping';
+import { renderMdC, tracePipelineFromGroups, type Group } from './lib/mdc';
+import {
+  renderCuneiform,
+  traceCuneiform,
+  type CuneiformToken,
+  type CuneiformDialect,
+} from './lib/cuneiform';
+import {
+  englishToOldPersian,
+  OP_SIGNS,
+  OP_IDEOGRAMS,
+  OP_WORD_DIVIDER,
+  type OPSegment,
+} from './lib/oldPersianSigns';
+import {
+  englishToUgaritic,
+  UG_LETTERS,
+  UG_WORD_DIVIDER,
+  type UGSegment,
+} from './lib/ugariticSigns';
+import { PRESETS } from './lib/presets';
+import { downloadImage } from './lib/exportImage';
+import { BUNDLED_FONT, REMOTE_FONTS, loadFont } from './lib/fontLoader';
+import type { AppState, FontOption, PipelineStep, ScriptFamily } from './types';
 
 const INITIAL: AppState = {
-	inputText: "",
-	hasRendered: false,
-	cartouche: false,
-	mode: "literal",
-	layout: "horizontal-ltr",
-	preset: "Gold",
-	style: { ...PRESETS.Gold },
+  inputText: '',
+  hasRendered: false,
+  cartouche: false,
+  scriptFamily: 'hieroglyphs',
+  mode: 'literal',
+  cuneiformMode: 'english',
+  layout: 'horizontal-ltr',
+  preset: 'Gold',
+  style: { ...PRESETS.Gold },
+  showPipeline: true,
 };
 
+export function fontFamilyFor(family: ScriptFamily, styleFontFamily: string): string {
+  if (family === 'hieroglyphs') return styleFontFamily;
+  if (family === 'old-persian') return 'Noto Sans Old Persian';
+  if (family === 'ugaritic') return 'Noto Sans Ugaritic';
+  return 'Noto Sans Cuneiform';
+}
+
+function dialectFor(family: ScriptFamily): CuneiformDialect {
+  switch (family) {
+    case 'sumerian': return 'sumerian';
+    case 'akkadian': return 'akkadian';
+    case 'hittite': return 'hittite';
+    case 'elamite': return 'elamite';
+    default: return 'akkadian';
+  }
+}
+
+// Old Persian: build segments from either English or ATF input.
+function opSegments(text: string): OPSegment[] {
+  const hasATF = /[-.]|[A-Z]/.test(text);
+  if (!hasATF) return englishToOldPersian(text);
+  const out: OPSegment[] = [];
+  const words = text.split(/\s+/).filter(Boolean);
+  words.forEach((word, wi) => {
+    if (wi > 0) out.push({ input: ' ', key: 'sp', glyph: OP_WORD_DIVIDER, role: 'space' });
+    const parts = word.split(/[-.]/).filter(Boolean);
+    for (const p of parts) {
+      if (OP_IDEOGRAMS[p]) {
+        out.push({ input: p, key: p, glyph: OP_IDEOGRAMS[p].glyph, role: 'ideogram' });
+        continue;
+      }
+      const key = p.toLowerCase();
+      if (OP_SIGNS[key]) {
+        out.push({ input: p, key, glyph: OP_SIGNS[key].glyph, role: 'ATF-syllable' });
+      } else {
+        out.push({ input: p, key: '', glyph: '', role: 'unknown' });
+      }
+    }
+  });
+  return out;
+}
+
+function ugSegments(text: string): UGSegment[] {
+  const hasATF = /-/.test(text);
+  if (!hasATF) return englishToUgaritic(text);
+  const out: UGSegment[] = [];
+  const words = text.split(/\s+/).filter(Boolean);
+  words.forEach((word, wi) => {
+    if (wi > 0) out.push({ input: ' ', key: 'sp', glyph: UG_WORD_DIVIDER, role: 'space' });
+    const parts = word.split('-').filter(Boolean);
+    for (const p of parts) {
+      if (UG_LETTERS[p]) {
+        out.push({ input: p, key: p, glyph: UG_LETTERS[p].glyph, role: 'letter', translit: UG_LETTERS[p].translit });
+      } else {
+        out.push({ input: p, key: '', glyph: '', role: 'unknown' });
+      }
+    }
+  });
+  return out;
+}
+
+function segmentsToString<T extends { glyph: string }>(segs: T[]): string {
+  return segs.map(s => s.glyph).join('');
+}
+
+function opTrace(segs: OPSegment[]): PipelineStep[] {
+  return segs.map(s => ({
+    input: s.input,
+    glyph: s.glyph,
+    role: s.role,
+    detail: s.key ? `sign ${s.key}` : undefined,
+  }));
+}
+
+function ugTrace(segs: UGSegment[]): PipelineStep[] {
+  return segs.map(s => ({
+    input: s.input,
+    glyph: s.glyph,
+    role: s.role,
+    detail: s.translit ?? (s.key ? `letter ${s.key}` : undefined),
+  }));
+}
+
 export default function App() {
-	const [state, setState] = useState<AppState>(INITIAL);
-	const [fonts, setFonts] = useState<FontOption[]>([
-		BUNDLED_FONT,
-		...REMOTE_FONTS,
-	]);
-	const [isExplanationOpen, setIsExplanationOpen] = useState(false);
-	const renderRef = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<AppState>(INITIAL);
+  const [fonts, setFonts] = useState<FontOption[]>([BUNDLED_FONT, ...REMOTE_FONTS]);
+  const renderRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-	const update = useCallback((patch: Partial<AppState>) => {
-		setState((s) => ({ ...s, ...patch }));
-	}, []);
+  const update = useCallback((patch: Partial<AppState>) => {
+    setState((s) => ({ ...s, ...patch }));
+  }, []);
 
-	function doRender() {
-		setState((s) => ({ ...s, hasRendered: true }));
-	}
+  function doRender() {
+    setState((s) => ({ ...s, hasRendered: true }));
+  }
 
-	async function onLoadFont(font: FontOption): Promise<void> {
-		await loadFont(font);
-		setFonts((list) =>
-			list.map((f) =>
-				f.family === font.family && f.label === font.label
-					? { ...f, loaded: true }
-					: f,
-			),
-		);
-	}
+  async function onLoadFont(font: FontOption): Promise<void> {
+    await loadFont(font);
+    setFonts((list) =>
+      list.map((f) =>
+        f.family === font.family && f.label === font.label ? { ...f, loaded: true } : f
+      )
+    );
+  }
 
-	async function onAddCustomFont(family: string, url: string): Promise<void> {
-		const next: FontOption = {
-			family,
-			label: family + " (custom)",
-			source: "user-face",
-			url,
-			loaded: false,
-		};
-		await loadFont(next);
-		next.loaded = true;
-		setFonts((list) => [...list, next]);
-		update({ style: { ...state.style, fontFamily: family } });
-	}
+  async function onAddCustomFont(family: string, url: string): Promise<void> {
+    const next: FontOption = { family, label: family + ' (custom)', source: 'user-face', url, loaded: false };
+    await loadFont(next);
+    next.loaded = true;
+    setFonts((list) => [...list, next]);
+    setState((s) => ({ ...s, style: { ...s.style, fontFamily: family } }));
+  }
 
-	function onSelectFont(family: string) {
-		update({ style: { ...state.style, fontFamily: family } });
-	}
+  function onSelectFont(family: string) {
+    setState((s) => ({ ...s, style: { ...s.style, fontFamily: family } }));
+  }
 
-	async function onDownload(format: "png" | "jpg") {
-		if (!renderRef.current) return;
-		const safe = (state.inputText || "hieroglyph")
-			.replace(/[^a-z0-9]+/gi, "_")
-			.slice(0, 24);
-		try {
-			await downloadImage(renderRef.current, format, `nubian_moon_${safe}`);
-		} catch (err) {
-			console.error("export failed", err);
-			alert("Image export failed. See console.");
-		}
-	}
+  function onInsertCode(rawToken: string) {
+    const token = state.scriptFamily === 'hieroglyphs' ? `<${rawToken}>` : rawToken;
+    const ta = textareaRef.current;
+    setState((s) => {
+      const cur = s.inputText;
+      let next: string;
+      if (ta && document.activeElement === ta) {
+        const start = ta.selectionStart ?? cur.length;
+        const end = ta.selectionEnd ?? cur.length;
+        next = cur.slice(0, start) + token + cur.slice(end);
+        queueMicrotask(() => {
+          ta.focus();
+          const pos = start + token.length;
+          ta.setSelectionRange(pos, pos);
+        });
+      } else {
+        next = cur + token;
+      }
+      return { ...s, inputText: next };
+    });
+  }
 
-	const show = state.hasRendered && state.inputText.trim().length > 0;
-	const text: string =
-		show && state.mode !== "mdc"
-			? renderLiteralOrPhonetic(state.inputText, state.mode)
-			: "";
+  async function onDownload(format: 'png' | 'jpg') {
+    if (!renderRef.current) return;
+    const safe = (state.inputText || 'render').replace(/[^a-z0-9]+/gi, '_').slice(0, 24);
+    try {
+      await downloadImage(renderRef.current, format, `nubian_moon_${safe}`);
+    } catch (err) {
+      console.error('export failed', err);
+      alert('Image export failed. See console.');
+    }
+  }
 
-	// Capture both groups and the pipeline trace
-	const mdcData =
-		show && state.mode === "mdc"
-			? renderMdC(state.inputText)
-			: { groups: [], trace: [] };
-	const groups: Group[] = mdcData.groups;
-	const trace: PipelineTrace[] = mdcData.trace;
+  // Derive rendered content + pipeline based on script family.
+  const show = state.hasRendered && state.inputText.trim().length > 0;
+  const family = state.scriptFamily;
 
-	const explanationPanel = show ? (
-		<div
-			className="explanation-panel"
-			style={{
-				marginTop: "1.5rem",
-				padding: "1rem",
-				background: "rgba(0,0,0,0.05)",
-				borderRadius: "8px",
-				maxWidth: "800px",
-				marginInline: "auto",
-			}}
-		>
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					alignItems: "center",
-					cursor: "pointer",
-				}}
-				onClick={() => setIsExplanationOpen(!isExplanationOpen)}
-			>
-				<h4 style={{ margin: 0 }}>Translation Pipeline ({state.mode} mode)</h4>
-				<button
-					type="button"
-					style={{
-						background: "none",
-						border: "none",
-						fontSize: "1.2rem",
-						cursor: "pointer",
-						color: "inherit",
-					}}
-				>
-					{isExplanationOpen ? "▼" : "▶"}
-				</button>
-			</div>
+  let text = '';
+  let groups: Group[] = [];
+  let cuneiTokens: CuneiformToken[] = [];
+  let pipeline: PipelineStep[] = [];
 
-			{isExplanationOpen && (
-				<div
-					style={{
-						marginTop: "1rem",
-						paddingTop: "1rem",
-						borderTop: "1px solid rgba(0,0,0,0.1)",
-					}}
-				>
-					{state.mode !== "mdc" ? (
-						<p
-							style={{
-								fontSize: "0.9rem",
-								lineHeight: "1.4",
-								margin: 0,
-								color: "#555",
-							}}
-						>
-							<em>Analysis of your input:</em> The engine scanned{" "}
-							<strong>"{state.inputText}"</strong> to produce{" "}
-							<strong>{Array.from(text).length}</strong> hieroglyph(s) directly
-							from standard character mappings.
-						</p>
-					) : (
-						<div style={{ fontSize: "0.9rem", color: "#333" }}>
-							<p style={{ marginBottom: "12px" }}>
-								<strong>How MdC processed your input:</strong>
-							</p>
+  if (show) {
+    if (family === 'hieroglyphs') {
+      if (state.mode === 'mdc') {
+        groups = renderMdC(state.inputText);
+        pipeline = tracePipelineFromGroups(groups);
+      } else {
+        text = renderLiteralOrPhonetic(state.inputText, state.mode);
+        pipeline = traceLiteralOrPhonetic(state.inputText, state.mode);
+      }
+    } else if (family === 'old-persian') {
+      const segs = opSegments(state.inputText);
+      text = segmentsToString(segs);
+      pipeline = opTrace(segs);
+    } else if (family === 'ugaritic') {
+      const segs = ugSegments(state.inputText);
+      text = segmentsToString(segs);
+      pipeline = ugTrace(segs);
+    } else {
+      cuneiTokens = renderCuneiform(state.inputText, dialectFor(family));
+      pipeline = traceCuneiform(cuneiTokens);
+    }
+  }
 
-							<div style={{ display: "grid", gap: "8px" }}>
-								{trace.map((step, idx) => (
-									<div
-										key={idx}
-										style={{
-											padding: "8px",
-											background: "#fff",
-											borderRadius: "4px",
-											border: "1px solid #ddd",
-										}}
-									>
-										<div
-											style={{
-												display: "flex",
-												justifyContent: "space-between",
-												marginBottom: "4px",
-											}}
-										>
-											<strong>Word: "{step.english}"</strong>
-											{step.isDictMatch ? (
-												<span
-													style={{
-														color: "#2e7d32",
-														fontSize: "0.8rem",
-														fontWeight: "bold",
-													}}
-												>
-													✓ Dictionary Match
-												</span>
-											) : (
-												<span style={{ color: "#f57c00", fontSize: "0.8rem" }}>
-													Heuristic Approximation
-												</span>
-											)}
-										</div>
+  const paletteVisible =
+    (family === 'hieroglyphs' && state.mode === 'mdc') ||
+    (family !== 'hieroglyphs');
 
-										<div
-											style={{
-												display: "flex",
-												alignItems: "center",
-												flexWrap: "wrap",
-												gap: "8px",
-												fontFamily: "monospace",
-												fontSize: "0.85rem",
-											}}
-										>
-											<span
-												title="Transliteration (Egyptological Sounds)"
-												style={{
-													background: "#eee",
-													padding: "2px 6px",
-													borderRadius: "4px",
-												}}
-											>
-												{step.translit}
-											</span>
-											<span>&rarr;</span>
-											<span
-												title="Gardiner Code layout (with structural operators)"
-												style={{
-													background: "#eee",
-													padding: "2px 6px",
-													borderRadius: "4px",
-												}}
-											>
-												{step.gardiner}
-											</span>
-											<span>&rarr;</span>
-											<span
-												title="Final Unicode Output"
-												style={{
-													fontSize: "1.2rem",
-													fontFamily: `'${state.style.fontFamily}', serif`,
-												}}
-											>
-												{step.finalSigns}
-											</span>
-										</div>
-									</div>
-								))}
-							</div>
+  const displayFontFamily = fontFamilyFor(family, state.style.fontFamily);
+  const pipelineFontFamily = displayFontFamily;
 
-							<p
-								style={{
-									marginTop: "12px",
-									fontSize: "0.8rem",
-									color: "#666",
-									fontStyle: "italic",
-								}}
-							>
-								Note: In Gardiner code, <code>*</code> places signs horizontally
-								side-by-side, and <code>:</code> stacks them vertically.
-							</p>
-						</div>
-					)}
-				</div>
-			)}
-		</div>
-	) : null;
-
-	return (
-		<div className="app">
-			<Banner />
-			<main className="layout">
-				<Controls
-					state={state}
-					onChange={update}
-					onRender={doRender}
-					fonts={fonts}
-					onSelectFont={onSelectFont}
-					onLoadFont={onLoadFont}
-					onAddCustomFont={onAddCustomFont}
-				/>
-				<section className="stage">
-					<div className="render-area">
-						<RenderPanel
-							ref={renderRef}
-							mode={state.mode}
-							text={text}
-							groups={groups}
-							cartouche={state.cartouche}
-							layout={state.layout}
-							style={state.style}
-						/>
-					</div>
-
-					{explanationPanel}
-
-					<div className="download-row">
-						<button
-							onClick={() => onDownload("png")}
-							disabled={!show}
-						>
-							Download PNG
-						</button>
-						<button
-							onClick={() => onDownload("jpg")}
-							disabled={!show}
-						>
-							Download JPG
-						</button>
-						<span className="dl-note">max 800px wide</span>
-					</div>
-				</section>
-			</main>
-		</div>
-	);
+  return (
+    <div className="app">
+      <Banner />
+      <main className="layout">
+        <div className="left-col">
+          <Controls
+            ref={textareaRef}
+            state={state}
+            onChange={update}
+            onRender={doRender}
+            fonts={fonts}
+            onSelectFont={onSelectFont}
+            onLoadFont={onLoadFont}
+            onAddCustomFont={onAddCustomFont}
+          />
+          {paletteVisible && (
+            <div className="palette-panel">
+              <SignPalette scriptFamily={family} onInsert={onInsertCode} />
+            </div>
+          )}
+        </div>
+        <section className="stage">
+          <div className="render-area">
+            <RenderPanel
+              ref={renderRef}
+              scriptFamily={family}
+              mode={state.mode}
+              text={text}
+              groups={groups}
+              cuneiTokens={cuneiTokens}
+              cartouche={state.cartouche}
+              layout={state.layout}
+              style={{ ...state.style, fontFamily: displayFontFamily }}
+            />
+          </div>
+          <div className="download-row">
+            <button onClick={() => onDownload('png')} disabled={!show}>
+              Download PNG
+            </button>
+            <button onClick={() => onDownload('jpg')} disabled={!show}>
+              Download JPG
+            </button>
+            <span className="dl-note">max 800px wide</span>
+          </div>
+          {state.showPipeline && show && (
+            <PipelinePanel
+              steps={pipeline}
+              scriptFamily={family}
+              mode={state.mode}
+              inputText={state.inputText}
+              fontFamily={pipelineFontFamily}
+            />
+          )}
+        </section>
+      </main>
+    </div>
+  );
 }
