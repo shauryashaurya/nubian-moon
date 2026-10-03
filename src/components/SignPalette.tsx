@@ -11,9 +11,9 @@ interface Props {
 }
 
 interface UniversalEntry {
-  key: string;      // token to insert (Gardiner code for hiero, ATF token for cunei, etc.)
-  glyph: string;    // rendered sign
-  label: string;    // display text
+  key: string;
+  glyph: string;
+  label: string;
   fontFamily: string;
 }
 
@@ -54,7 +54,6 @@ function paletteFor(family: ScriptFamily): Record<string, UniversalEntry[]> {
     }
     return out;
   }
-  // Sumerian, Akkadian, Hittite, Elamite all share the same cuneiform palette.
   const out: Record<string, UniversalEntry[]> = {};
   for (const cat of Object.keys(CUNEI_PALETTE)) {
     out[cat] = CUNEI_PALETTE[cat].map(e => ({
@@ -67,21 +66,21 @@ function paletteFor(family: ScriptFamily): Record<string, UniversalEntry[]> {
   return out;
 }
 
-// Sign palette. Content and inserted token vary by script family.
-// Hieroglyph mode: inserts <CODE>. Cuneiform: inserts ATF tokens.
-// Old Persian: inserts sign keys. Ugaritic: inserts letter keys.
-// The parent (App) handles bracket-wrapping for hieroglyphs.
 export default function SignPalette({ scriptFamily, onInsert }: Props) {
   const [open, setOpen] = useState(true);
   const palette = useMemo(() => paletteFor(scriptFamily), [scriptFamily]);
   const categories = Object.keys(palette);
+  const totalSigns = useMemo(
+    () => categories.reduce((sum, c) => sum + palette[c].length, 0),
+    [categories, palette]
+  );
 
   const help = renderHelp(scriptFamily);
 
   return (
     <section className="control-group">
       <div className="group-head">
-        <h3>Sign palette</h3>
+        <h3>Sign palette <span className="palette-count">({totalSigns} signs)</span></h3>
         <button type="button" className="link-btn" onClick={() => setOpen(v => !v)}>
           {open ? 'hide' : 'show'}
         </button>
@@ -109,9 +108,8 @@ function renderHelp(family: ScriptFamily): React.ReactNode {
   if (family === 'hieroglyphs') {
     return (
       <>
-        <p>Click any sign to insert its Gardiner code (<code>&lt;N35&gt;</code>) into the input.</p>
-        <p>MdC operators: <code>-</code> sequence, <code>:</code> stack, <code>*</code> side by side, <code>!</code> line break.</p>
-        <p>English mode: use <code>|</code> to split syllables and <code>&lt;CODE&gt;</code> mid-word to drop a literal sign.</p>
+        <p>Click any sign to insert its Gardiner code (<code>&lt;N35&gt;</code>) at the caret. Works in all three modes: literal, phonetic, and MdC.</p>
+        <p>MdC-only operators: <code>-</code> sequence, <code>:</code> stack, <code>*</code> side by side, <code>!</code> line break; <code>|</code> splits syllables.</p>
       </>
     );
   }

@@ -41,6 +41,7 @@ const INITIAL: AppState = {
   preset: 'Gold',
   style: { ...PRESETS.Gold },
   showPipeline: true,
+  inputFont: 'mono',
 };
 
 export function fontFamilyFor(family: ScriptFamily, styleFontFamily: string): string {
@@ -60,7 +61,6 @@ function dialectFor(family: ScriptFamily): CuneiformDialect {
   }
 }
 
-// Old Persian: build segments from either English or ATF input.
 function opSegments(text: string): OPSegment[] {
   const hasATF = /[-.]|[A-Z]/.test(text);
   if (!hasATF) return englishToOldPersian(text);
@@ -126,6 +126,16 @@ function ugTrace(segs: UGSegment[]): PipelineStep[] {
   }));
 }
 
+// Non-hieroglyph scripts need a '-' separator between consecutive signs
+// so that ATF parsing can see each token as a unit.
+// A separator is added only if adjacent character is a letter/digit.
+function needsSeparator(ch: string | undefined): boolean {
+  if (!ch) return false;
+  if (ch === '-' || ch === '{' || ch === '}') return false;
+  if (/\s/.test(ch)) return false;
+  return true;
+}
+
 export default function App() {
   const [state, setState] = useState<AppState>(INITIAL);
   const [fonts, setFonts] = useState<FontOption[]>([BUNDLED_FONT, ...REMOTE_FONTS]);
@@ -161,25 +171,40 @@ export default function App() {
     setState((s) => ({ ...s, style: { ...s.style, fontFamily: family } }));
   }
 
+  // Insert a palette sign at the caret with family-appropriate wrapping and
+  // separator rules. Auto-renders so the user sees live feedback as they
+  // click signs; if the resulting input produces no output, the diagnostic
+  // in RenderPanel explains why.
   function onInsertCode(rawToken: string) {
-    const token = state.scriptFamily === 'hieroglyphs' ? `<${rawToken}>` : rawToken;
+    const family = state.scriptFamily;
     const ta = textareaRef.current;
     setState((s) => {
       const cur = s.inputText;
-      let next: string;
-      if (ta && document.activeElement === ta) {
-        const start = ta.selectionStart ?? cur.length;
-        const end = ta.selectionEnd ?? cur.length;
-        next = cur.slice(0, start) + token + cur.slice(end);
+      const focused = ta && document.activeElement === ta;
+      const start = focused ? (ta.selectionStart ?? cur.length) : cur.length;
+      const end = focused ? (ta.selectionEnd ?? cur.length) : cur.length;
+
+      const base = family === 'hieroglyphs' ? `<${rawToken}>` : rawToken;
+
+      let insertion = base;
+      if (family !== 'hieroglyphs') {
+        const prev = start > 0 ? cur[start - 1] : undefined;
+        const nextCh = end < cur.length ? cur[end] : undefined;
+        const startsWithBrace = base.startsWith('{');
+        const endsWithBrace = base.endsWith('}');
+        if (needsSeparator(prev) && !startsWithBrace) insertion = '-' + insertion;
+        if (needsSeparator(nextCh) && !endsWithBrace) insertion = insertion + '-';
+      }
+
+      const nextText = cur.slice(0, start) + insertion + cur.slice(end);
+      if (focused) {
         queueMicrotask(() => {
           ta.focus();
-          const pos = start + token.length;
+          const pos = start + insertion.length;
           ta.setSelectionRange(pos, pos);
         });
-      } else {
-        next = cur + token;
       }
-      return { ...s, inputText: next };
+      return { ...s, inputText: nextText, hasRendered: true };
     });
   }
 
@@ -194,7 +219,6 @@ export default function App() {
     }
   }
 
-  // Derive rendered content + pipeline based on script family.
   const show = state.hasRendered && state.inputText.trim().length > 0;
   const family = state.scriptFamily;
 
@@ -226,12 +250,10 @@ export default function App() {
     }
   }
 
-  const paletteVisible =
-    (family === 'hieroglyphs' && state.mode === 'mdc') ||
-    (family !== 'hieroglyphs');
-
+  const paletteVisible = true;
   const displayFontFamily = fontFamilyFor(family, state.style.fontFamily);
   const pipelineFontFamily = displayFontFamily;
+  const inputForPanel = state.hasRendered ? state.inputText : '';
 
   return (
     <div className="app">
@@ -266,6 +288,7 @@ export default function App() {
               cartouche={state.cartouche}
               layout={state.layout}
               style={{ ...state.style, fontFamily: displayFontFamily }}
+              inputText={inputForPanel}
             />
           </div>
           <div className="download-row">

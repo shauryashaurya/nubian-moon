@@ -1278,3 +1278,168 @@ body
     display: none;
   }
 }
+
+/* diagnostic block shown when the pipeline runs but produces no output */
+.diag
+{
+  max-width: 560px;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: 'Cinzel', serif;
+  line-height: 1.5;
+}
+
+.diag-title
+{
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+
+.diag-body
+{
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+
+.diag-list
+{
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.diag-list li
+{
+  margin-bottom: 4px;
+}
+
+.diag code
+{
+  background: rgba(212, 166, 74, 0.15);
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--gold);
+}
+
+/* text-input font variants: default mono (set in base rule), opt-in cinzel */
+.text-input.font-mono
+{
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.text-input.font-cinzel
+{
+  font-family: 'Cinzel', serif;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* counter row holds the character count plus the font toggle */
+.counter-row
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.font-toggle
+{
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.font-toggle .ft-opt
+{
+  background: var(--bg-panel-2);
+  color: var(--ink-dim);
+  border: 0;
+  border-right: 1px solid var(--rule);
+  padding: 4px 10px;
+  font-family: 'Cinzel', serif;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.font-toggle .ft-opt:last-child
+{
+  border-right: 0;
+}
+
+.font-toggle .ft-opt:hover
+{
+  color: var(--ink);
+}
+
+.font-toggle .ft-opt.active
+{
+  background: var(--gold);
+  color: #1a1004;
+}
+
+/* palette panel: round corners stay clean when scrolling, viewport-safe height */
+.palette-panel
+{
+  overflow: hidden;
+}
+
+.palette-scroll
+{
+  max-height: min(360px, 55vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-dim) var(--bg-panel-2);
+  overscroll-behavior: contain;
+}
+
+.palette-scroll::-webkit-scrollbar
+{
+  width: 8px;
+}
+
+.palette-scroll::-webkit-scrollbar-track
+{
+  background: var(--bg-panel-2);
+  border-radius: 4px;
+}
+
+.palette-scroll::-webkit-scrollbar-thumb
+{
+  background: var(--gold-dim);
+  border-radius: 4px;
+  border: 1px solid var(--bg-panel-2);
+}
+
+.palette-scroll::-webkit-scrollbar-thumb:hover
+{
+  background: var(--gold);
+}
+
+@media (max-width: 900px)
+{
+  .palette-scroll
+  {
+    max-height: min(300px, 60vh);
+  }
+}

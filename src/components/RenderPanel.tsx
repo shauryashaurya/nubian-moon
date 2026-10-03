@@ -1,9 +1,8 @@
 import { type CSSProperties, type Ref } from 'react';
 import type { LayoutDirection, RenderMode, ScriptFamily, StyleConfig } from '../types';
 import type { Group, Quadrat } from '../lib/mdc';
-import type { CuneiformToken } from '../lib/cuneiform';
+import { type CuneiformToken, isATFInput } from '../lib/cuneiform';
 
-// React 19 accepts `ref` as a plain prop. forwardRef is deprecated.
 interface Props {
   scriptFamily: ScriptFamily;
   mode: RenderMode;
@@ -13,6 +12,7 @@ interface Props {
   cartouche: boolean;
   layout: LayoutDirection;
   style: StyleConfig;
+  inputText: string;
   ref?: Ref<HTMLDivElement>;
 }
 
@@ -108,6 +108,62 @@ function QuadratView({
   );
 }
 
+// Diagnostic for the empty-but-tried case. Explains WHY the output is
+// empty and tells the user what to change. Specific to cuneiform-family
+// scripts because that is where silent empty renders are most common.
+function emptyRenderMessage(family: ScriptFamily, inputText: string, hasRendered: boolean): React.ReactNode {
+  if (!hasRendered) {
+    return 'Type something and press Render';
+  }
+  const isCuneiform = ['sumerian', 'akkadian', 'hittite', 'elamite'].includes(family);
+  if (isCuneiform) {
+    if (isATFInput(inputText)) {
+      const triggers: string[] = [];
+      if (/-/.test(inputText)) triggers.push('a dash');
+      if (/[{}]/.test(inputText)) triggers.push('curly braces');
+      if (/[A-Z]/.test(inputText)) triggers.push('an uppercase letter');
+      const triggerList = triggers.join(' or ');
+      return (
+        <div className="diag">
+          <div className="diag-title">ATF mode triggered - no signs matched</div>
+          <div className="diag-body">
+            ATF mode activated because your input contains {triggerList}, and none of the resulting tokens matched a known sign.
+          </div>
+          <div className="diag-body">
+            To fix, try one of:
+          </div>
+          <ul className="diag-list">
+            <li>Use lowercase for syllabic signs: <code>lu-gal</code>, <code>nin-gal</code></li>
+            <li>Use UPPERCASE for logograms: <code>LUGAL</code>, <code>DINGIR</code></li>
+            <li>Wrap determinatives in braces: <code>{'{d}'}en-lil</code>, <code>{'{kur}'}elam</code></li>
+            <li>Remove the dash / braces / uppercase letters to switch to English mode</li>
+            <li>Open the sign palette below and click signs to insert valid tokens</li>
+          </ul>
+        </div>
+      );
+    }
+    return (
+      <div className="diag">
+        <div className="diag-title">English mode - no syllables matched</div>
+        <div className="diag-body">
+          The English pipeline could not resolve your input into any cuneiform signs. Try a longer word, a known noun (king, water, god, land), or switch to ATF syntax (e.g. <code>lu-gal</code>, <code>{'{d}'}en-lil</code>).
+        </div>
+      </div>
+    );
+  }
+  if (family === 'old-persian' || family === 'ugaritic') {
+    return (
+      <div className="diag">
+        <div className="diag-title">No signs matched your input</div>
+        <div className="diag-body">
+          Use the sign palette below to see valid tokens for this script, or try common English words.
+        </div>
+      </div>
+    );
+  }
+  return 'No signs produced. Check your input.';
+}
+
 export default function RenderPanel({
   scriptFamily,
   mode,
@@ -117,6 +173,7 @@ export default function RenderPanel({
   cartouche,
   layout,
   style,
+  inputText,
   ref,
 }: Props) {
   const isVertical = layout.startsWith('vertical') || layout === 'archaic-sumerian';
@@ -129,6 +186,8 @@ export default function RenderPanel({
     : isCuneiform
       ? cuneiTokens.length > 0
       : text.length > 0;
+
+  const hasInput = inputText.trim().length > 0;
 
   const panelStyle: CSSProperties = {
     background: style.bgColor,
@@ -150,8 +209,8 @@ export default function RenderPanel({
   let body: React.ReactNode;
   if (!hasContent) {
     body = (
-      <div className="glyph-empty" style={{ color: style.textColor, opacity: 0.4 }}>
-        Type something and press Render
+      <div className="glyph-empty" style={{ color: style.textColor, opacity: 0.75 }}>
+        {emptyRenderMessage(scriptFamily, inputText, hasInput)}
       </div>
     );
   } else if (isHiero && mode === 'mdc') {

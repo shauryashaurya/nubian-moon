@@ -3,7 +3,7 @@ export type LayoutDirection =
   | 'horizontal-rtl'
   | 'vertical-rl'
   | 'vertical-lr'
-  | 'archaic-sumerian';  // proto-cuneiform columns, signs rotated 90 CCW
+  | 'archaic-sumerian';
 
 export type RenderMode = 'literal' | 'phonetic' | 'mdc';
 
@@ -17,6 +17,8 @@ export type ScriptFamily =
   | 'ugaritic';
 
 export type CuneiformMode = 'english' | 'atf' | 'literal';
+
+export type InputFont = 'cinzel' | 'mono';
 
 export interface StyleConfig {
   bgColor: string;
@@ -41,15 +43,12 @@ export interface FontOption {
   loaded: boolean;
 }
 
-// A single step in the derivation from English input to rendered glyph(s).
-// Emitted by every pipeline (literal, phonetic, MdC, cuneiform, OP, UG)
-// and displayed in the Translation Pipeline panel.
 export interface PipelineStep {
-  input: string;      // source segment as it appeared in the user input
-  glyph: string;      // rendered sign(s) for this step
-  role: string;       // classifier: 'uniliteral' | 'biliteral' | 'triliteral' | 'determinative' | 'logogram' | 'syllabic' | 'digit' | 'digraph' | 'literal-code' | 'letter' | 'space' | 'unknown'
-  detail?: string;    // human note: Gardiner code, ATF value, gloss
-  fontFamily?: string; // font override for palette glyph rendering
+  input: string;
+  glyph: string;
+  role: string;
+  detail?: string;
+  fontFamily?: string;
 }
 
 export interface AppState {
@@ -63,4 +62,5 @@ export interface AppState {
   style: StyleConfig;
   preset: string;
   showPipeline: boolean;
+  inputFont: InputFont;
 }

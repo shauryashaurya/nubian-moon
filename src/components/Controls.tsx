@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type Ref } from 'react';
-import type { AppState, FontOption, LayoutDirection, RenderMode, ScriptFamily, StyleConfig } from '../types';
+import type { AppState, FontOption, InputFont, LayoutDirection, RenderMode, ScriptFamily, StyleConfig } from '../types';
 import { PRESETS, PRESET_NAMES } from '../lib/presets';
 import {
   defaultLayout,
@@ -36,7 +36,6 @@ const SCRIPT_FAMILY_OPTIONS: Array<{ value: ScriptFamily; label: string }> = [
   { value: 'ugaritic', label: 'Ugaritic alphabet' },
 ];
 
-// React 19 accepts `ref` as a plain prop. forwardRef is deprecated.
 interface Props {
   state: AppState;
   onChange: (next: Partial<AppState>) => void;
@@ -88,6 +87,10 @@ export default function Controls({
   function onInput(e: ChangeEvent<HTMLTextAreaElement>) {
     const v = e.target.value.slice(0, limit);
     onChange({ inputText: v });
+  }
+
+  function setInputFont(f: InputFont) {
+    onChange({ inputFont: f });
   }
 
   function onScriptFamilyChange(next: ScriptFamily) {
@@ -142,7 +145,7 @@ export default function Controls({
   const placeholder = isHiero
     ? (state.mode === 'mdc' ? 'English, or MdC like S29-N35:X1' : 'Type a name or short phrase...')
     : isCuneiform
-      ? 'English (best-effort), or ATF like lugal or {d}en-lil2'
+      ? 'English (best-effort), or ATF like lu-gal or {d}en-lil2'
       : isOP
         ? 'English or dashed ATF like da-a-ra-ya-va-u-sha'
         : 'English (best-effort Ugaritic transliteration)';
@@ -155,7 +158,7 @@ export default function Controls({
           <InfoIcon label="About script families">
             The script selector controls both the sign inventory and the pipeline that turns your input into glyphs.<br /><br />
             <strong>Hieroglyphs:</strong> literal, phonetic, or MdC modes.<br />
-            <strong>Sumerian / Akkadian / Hittite / Elamite:</strong> share the same cuneiform Unicode block; each has its own conventions. English is split into syllables; raw ATF (Oracc-style: <code>lugal</code>, <code>{'{d}'}en-lil2</code>) auto-detected.<br />
+            <strong>Sumerian / Akkadian / Hittite / Elamite:</strong> share the same cuneiform Unicode block; each has its own conventions. English is split into syllables; raw ATF (Oracc-style: <code>lu-gal</code>, <code>{'{d}'}en-lil2</code>) auto-detected.<br />
             <strong>Old Persian:</strong> Darius-era cuneiform. Semi-alphabetic, ~36 signs.<br />
             <strong>Ugaritic:</strong> a cuneiform alphabet (abjad), 30 consonants.
           </InfoIcon>
@@ -175,15 +178,35 @@ export default function Controls({
         <h3>Text</h3>
         <textarea
           ref={textareaRef}
-          className="text-input"
+          className={`text-input font-${state.inputFont}`}
           value={state.inputText}
           onChange={onInput}
           maxLength={limit}
           placeholder={placeholder}
           rows={3}
         />
-        <div className="counter">
-          {state.inputText.length}/{limit} {remaining < 10 ? '(near limit)' : ''}
+        <div className="counter-row">
+          <div className="counter">
+            {state.inputText.length}/{limit} {remaining < 10 ? '(near limit)' : ''}
+          </div>
+          <div className="font-toggle" role="group" aria-label="Input font">
+            <button
+              type="button"
+              className={state.inputFont === 'mono' ? 'ft-opt active' : 'ft-opt'}
+              onClick={() => setInputFont('mono')}
+              title="Monospace: shows case clearly"
+            >
+              Mono
+            </button>
+            <button
+              type="button"
+              className={state.inputFont === 'cinzel' ? 'ft-opt active' : 'ft-opt'}
+              onClick={() => setInputFont('cinzel')}
+              title="Cinzel: classical display font (all small caps)"
+            >
+              Classical
+            </button>
+          </div>
         </div>
         <button className="render-btn" onClick={onRender} disabled={!state.inputText.trim()}>
           Render
@@ -231,17 +254,17 @@ export default function Controls({
                   - Lowercase = syllabic (<code>lu-gal</code>).<br />
                   - UPPERCASE = logogram (<code>LUGAL</code>).<br />
                   - <code>{'{d}'}</code>, <code>{'{m}'}</code>, <code>{'{kur}'}</code> etc. = determinatives.<br />
-                  - Example: <code>{'{d}'}en-lil2</code> for "the god Enlil".
+                  - Clicking palette signs inserts them with <code>-</code> separators automatically.
                 </>
               )}
               {isOP && (
                 <>
-                  Old Persian is CV-syllabic with ~36 signs. English is split into CV pairs. Ideograms like <code>AURAMAZDA</code>, <code>XSHAYATHIYA</code> (king) are supported. Use <code>-</code> or <code>.</code> to segment manually.
+                  Old Persian is CV-syllabic with ~36 signs. English is split into CV pairs. Ideograms like <code>AURAMAZDA</code>, <code>XSHAYATHIYA</code> (king) are supported. Palette inserts tokens with <code>-</code> separators.
                 </>
               )}
               {isUG && (
                 <>
-                  Ugaritic is an alphabet (abjad) with 30 consonantal signs. English letters map roughly; vowels are dropped in the traditional style. Use <code>-</code> in input to segment manually.
+                  Ugaritic is an alphabet (abjad) with 30 consonantal signs. English letters map roughly; vowels are dropped in the traditional style. Palette inserts letters with <code>-</code> separators.
                 </>
               )}
             </InfoIcon>
@@ -347,14 +370,14 @@ export default function Controls({
           {showAddFont && (
             <div className="add-font">
               <input
-                className="text-input"
+                className="text-input font-mono"
                 type="text"
                 placeholder="Family name"
                 value={newFontFamily}
                 onChange={(e) => setNewFontFamily(e.target.value)}
               />
               <input
-                className="text-input"
+                className="text-input font-mono"
                 type="url"
                 placeholder="https://.../font.woff2"
                 value={newFontUrl}

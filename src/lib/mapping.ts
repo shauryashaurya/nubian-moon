@@ -1,12 +1,12 @@
 // English to Egyptian Hieroglyph mapping.
 // Literal: 1 ASCII letter to 1 sign.
 // Phonetic: digraph-aware tokenization to phonetic signs.
-// This is a deliberately simple approximation; a future build can replace
-// the mapping tables with a Manuel de Codage transliteration pipeline.
+// Both modes also honor inline Gardiner codes written as <CODE> in the input,
+// so the sign palette can insert signs into any hieroglyph mode.
 
-import type { RenderMode } from '../types';
+import type { PipelineStep, RenderMode } from '../types';
+import { gardinerToUnicode } from './mdcSigns';
 
-// Single-letter mapping (uniliteral signs and their commonly used proxies).
 const LITERAL: Record<string, string> = {
   a: '\u{1313F}',
   b: '\u{130C0}',
@@ -36,7 +36,6 @@ const LITERAL: Record<string, string> = {
   z: '\u{13283}',
 };
 
-// Digraph mapping for phonetic mode. Order matters: longest first.
 const DIGRAPHS: Array<[string, string]> = [
   ['sh', '\u{13219}'],
   ['ch', '\u{13219}'],
@@ -50,7 +49,6 @@ const DIGRAPHS: Array<[string, string]> = [
   ['ck', '\u{133A1}'],
 ];
 
-// Digits: small numeric set; fall back to a single stroke per digit.
 const DIGITS: Record<string, string> = {
   '0': '\u{13361}',
   '1': '\u{13362}',
@@ -64,9 +62,8 @@ const DIGITS: Record<string, string> = {
   '9': '\u{1336A}',
 };
 
-// Space character used between rendered words. Kept as a regular space so
-// CSS letter-spacing and writing-mode handle line breaks naturally.
 const SPACE = ' ';
+const INLINE_CODE_RE = /^<([A-Za-z]{1,3}\d+[a-z]?)>/;
 
 function mapDigit(c: string): string {
   return DIGITS[c] ?? '';
@@ -74,49 +71,43 @@ function mapDigit(c: string): string {
 
 function literalMap(text: string): string {
   let out = '';
-  for (const ch of text) {
-    const low = ch.toLowerCase();
-    if (low >= 'a' && low <= 'z') {
-      out += LITERAL[low] ?? '';
-    } else if (low >= '0' && low <= '9') {
-      out += mapDigit(low);
-    } else if (low === ' ') {
-      out += SPACE;
+  let i = 0;
+  while (i < text.length) {
+    const m = text.slice(i).match(INLINE_CODE_RE);
+    if (m) {
+      const u = gardinerToUnicode(m[1]);
+      if (u) out += u;
+      i += m[0].length;
+      continue;
     }
-    // all other punctuation is dropped
+    const ch = text[i];
+    const low = ch.toLowerCase();
+    if (low >= 'a' && low <= 'z') out += LITERAL[low] ?? '';
+    else if (low >= '0' && low <= '9') out += mapDigit(low);
+    else if (low === ' ') out += SPACE;
+    i += 1;
   }
   return out;
 }
 
 function phoneticMap(text: string): string {
   let out = '';
-  const lower = text.toLowerCase();
   let i = 0;
-  while (i < lower.length) {
-    const ch = lower[i];
-    if (ch === ' ') {
-      out += SPACE;
-      i += 1;
+  while (i < text.length) {
+    const m = text.slice(i).match(INLINE_CODE_RE);
+    if (m) {
+      const u = gardinerToUnicode(m[1]);
+      if (u) out += u;
+      i += m[0].length;
       continue;
     }
-    if (ch >= '0' && ch <= '9') {
-      out += mapDigit(ch);
-      i += 1;
-      continue;
-    }
-    // try digraph first
-    const pair = lower.slice(i, i + 2);
+    const ch = text[i].toLowerCase();
+    if (ch === ' ') { out += SPACE; i += 1; continue; }
+    if (ch >= '0' && ch <= '9') { out += mapDigit(ch); i += 1; continue; }
+    const pair = text.slice(i, i + 2).toLowerCase();
     const dg = DIGRAPHS.find(([k]) => k === pair);
-    if (dg) {
-      out += dg[1];
-      i += 2;
-      continue;
-    }
-    if (ch >= 'a' && ch <= 'z') {
-      out += LITERAL[ch] ?? '';
-      i += 1;
-      continue;
-    }
+    if (dg) { out += dg[1]; i += 2; continue; }
+    if (ch >= 'a' && ch <= 'z') { out += LITERAL[ch] ?? ''; i += 1; continue; }
     i += 1;
   }
   return out;
@@ -127,10 +118,6 @@ export function render(text: string, mode: RenderMode): string {
   return mode === 'literal' ? literalMap(text) : phoneticMap(text);
 }
 
-// Trace variant: emits a PipelineStep for each input token so the UI can
-// display the derivation. Same logic as render() but records each step.
-import type { PipelineStep } from '../types';
-
 export function trace(text: string, mode: RenderMode): PipelineStep[] {
   if (!text) return [];
   return mode === 'literal' ? traceLiteral(text) : tracePhonetic(text);
@@ -138,50 +125,52 @@ export function trace(text: string, mode: RenderMode): PipelineStep[] {
 
 function traceLiteral(text: string): PipelineStep[] {
   const steps: PipelineStep[] = [];
-  for (const ch of text) {
+  let i = 0;
+  while (i < text.length) {
+    const m = text.slice(i).match(INLINE_CODE_RE);
+    if (m) {
+      const u = gardinerToUnicode(m[1]);
+      steps.push({ input: m[0], glyph: u ?? '', role: 'literal-code', detail: `Gardiner ${m[1]}` });
+      i += m[0].length;
+      continue;
+    }
+    const ch = text[i];
     const low = ch.toLowerCase();
-    if (low === ' ') {
-      steps.push({ input: ' ', glyph: ' ', role: 'space' });
-    } else if (low >= 'a' && low <= 'z' && LITERAL[low]) {
+    if (low === ' ') steps.push({ input: ' ', glyph: ' ', role: 'space' });
+    else if (low >= 'a' && low <= 'z' && LITERAL[low]) {
       steps.push({ input: ch, glyph: LITERAL[low], role: 'letter', detail: `Latin ${low} -> uniliteral proxy` });
     } else if (low >= '0' && low <= '9') {
       steps.push({ input: ch, glyph: DIGITS[low], role: 'digit', detail: `digit ${low}` });
     } else {
       steps.push({ input: ch, glyph: '', role: 'unknown', detail: 'dropped' });
     }
+    i += 1;
   }
   return steps;
 }
 
 function tracePhonetic(text: string): PipelineStep[] {
   const steps: PipelineStep[] = [];
-  const lower = text.toLowerCase();
   let i = 0;
-  while (i < lower.length) {
-    const ch = lower[i];
-    if (ch === ' ') {
-      steps.push({ input: ' ', glyph: ' ', role: 'space' });
-      i += 1;
+  while (i < text.length) {
+    const m = text.slice(i).match(INLINE_CODE_RE);
+    if (m) {
+      const u = gardinerToUnicode(m[1]);
+      steps.push({ input: m[0], glyph: u ?? '', role: 'literal-code', detail: `Gardiner ${m[1]}` });
+      i += m[0].length;
       continue;
     }
-    if (ch >= '0' && ch <= '9') {
-      steps.push({ input: ch, glyph: DIGITS[ch], role: 'digit', detail: `digit ${ch}` });
-      i += 1;
-      continue;
-    }
-    const pair = lower.slice(i, i + 2);
+    const ch = text[i].toLowerCase();
+    if (ch === ' ') { steps.push({ input: ' ', glyph: ' ', role: 'space' }); i += 1; continue; }
+    if (ch >= '0' && ch <= '9') { steps.push({ input: text[i], glyph: DIGITS[ch], role: 'digit', detail: `digit ${ch}` }); i += 1; continue; }
+    const pair = text.slice(i, i + 2).toLowerCase();
     const dg = DIGRAPHS.find(([k]) => k === pair);
-    if (dg) {
-      steps.push({ input: text.slice(i, i + 2), glyph: dg[1], role: 'digraph', detail: `${pair} -> phonetic sign` });
-      i += 2;
-      continue;
-    }
+    if (dg) { steps.push({ input: text.slice(i, i + 2), glyph: dg[1], role: 'digraph', detail: `${pair} -> phonetic sign` }); i += 2; continue; }
     if (ch >= 'a' && ch <= 'z' && LITERAL[ch]) {
       steps.push({ input: text[i], glyph: LITERAL[ch], role: 'letter', detail: `Latin ${ch} -> uniliteral` });
-      i += 1;
-      continue;
+    } else {
+      steps.push({ input: text[i], glyph: '', role: 'unknown', detail: 'dropped' });
     }
-    steps.push({ input: text[i], glyph: '', role: 'unknown', detail: 'dropped' });
     i += 1;
   }
   return steps;
